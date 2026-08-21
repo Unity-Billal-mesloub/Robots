@@ -37,18 +37,29 @@ static class PostProcessorUtil
     internal static void AddInitCommands(List<string> code, Program program, string indent = "")
     {
         foreach (var command in program.InitCommands)
-            code.Add(indent + command.Code(program, Target.Default));
+            AddCommand(code, command.Code(program, Target.Default), indent);
     }
 
-    internal static void AddTargetCommands(List<string> code, Program program, ProgramTarget programTarget, bool runBefore, Func<string, string>? transform = null)
+    internal static void AddTargetCommands(
+        List<string> code,
+        Program program,
+        ProgramTarget programTarget,
+        bool runBefore,
+        Func<string, string>? transform = null)
     {
         var target = programTarget.Target;
 
         foreach (var command in programTarget.Commands.Where(c => c.RunBefore == runBefore))
         {
             string commandCode = command.Code(program, target);
-            code.Add(transform?.Invoke(commandCode) ?? commandCode);
+            AddCommand(code, transform?.Invoke(commandCode) ?? commandCode);
         }
+    }
+
+    static void AddCommand(List<string> code, string command, string indent = "")
+    {
+        if (!string.IsNullOrWhiteSpace(command))
+            code.Add(indent + command);
     }
 
     static IEnumerable<string> Declarations(Program program) =>

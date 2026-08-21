@@ -68,6 +68,39 @@ public class PostProcessorTests
         Assert.That(actual, Is.EqualTo(expected));
     }
 
+    [Test]
+    public void AbbOmniCoreMultiFileReferencesSavedModxFiles()
+    {
+        var robot = TestRobots.AbbIrb120(omniCore: true);
+        var program = new Program(
+            "P",
+            robot,
+            [TestRobots.Toolpath(new JointTarget(new double[6]), new JointTarget(new double[6]))],
+            multiFileIndices: [0, 1]);
+        var output = Path.Combine(Path.GetTempPath(), $"RobotsTests-{Guid.NewGuid():N}");
+
+        try
+        {
+            Assert.That(program.Errors, Is.Empty);
+            program.Save(output);
+            var folder = Path.Combine(output, "P");
+            var main = File.ReadAllText(Path.Combine(folder, "P_T_ROB1.modx"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(main, Does.Contain("P_T_ROB1_000.modx"));
+                Assert.That(main, Does.Contain("P_T_ROB1_001.modx"));
+                Assert.That(File.Exists(Path.Combine(folder, "P_T_ROB1_000.modx")), Is.True);
+                Assert.That(File.Exists(Path.Combine(folder, "P_T_ROB1_001.modx")), Is.True);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+                Directory.Delete(output, recursive: true);
+        }
+    }
+
     [TestCase(Manufacturers.KUKA, 6)]
     [TestCase(Manufacturers.Staubli, 6)]
     [TestCase(Manufacturers.FrankaEmika, 7)]
@@ -290,6 +323,30 @@ public class PostProcessorTests
 
         Assert.That(program.Errors, Is.Empty);
         Assert.That(code, Does.Contain("[9E9,9E9,9E9,9E9,9E9,9E9]"));
+    }
+
+    [Test]
+    public void AbbTaskListMatchesMechanicalGroups()
+    {
+        var robot = TestRobots.AbbThreeGroup();
+        var target = new JointTarget(new double[6]);
+        var program = new Program(
+            "P",
+            robot,
+            [
+                TestRobots.Toolpath(target),
+                TestRobots.Toolpath(target),
+                TestRobots.Toolpath(target)
+            ]);
+        var code = TestRobots.FlattenCode(program);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(program.Errors, Is.Empty);
+            Assert.That(code, Does.Contain(
+                @"TASK PERS tasks all_tasks{3} := [[""T_ROB1""], [""T_ROB2""], [""T_ROB3""]];"));
+            Assert.That(code, Does.Not.Contain("all_tasks{2}"));
+        });
     }
 
     [Test]

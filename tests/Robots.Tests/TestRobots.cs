@@ -23,13 +23,16 @@ static class TestRobots
         </RobotArm>
         """;
 
-    public static readonly string AbbIrb120Xml = $"""
-        <RobotSystem name="IRB120" manufacturer="ABB">
+    static string AbbIrb120SystemXml(bool omniCore = false) => $"""
+        <RobotSystem name="IRB120" manufacturer="ABB"{(omniCore ? " controller=\"omnicore\"" : "")}>
           <Mechanisms>
             {AbbIrb120ArmXml}
           </Mechanisms>
+          {PostProcessorIOXml}
         </RobotSystem>
         """;
+
+    public static readonly string AbbIrb120Xml = AbbIrb120SystemXml();
 
     public const string GripperToolXml = """
         <Tool name="Gripper">
@@ -77,6 +80,20 @@ static class TestRobots
         </RobotSystem>
         """;
 
+    static readonly string AbbThreeGroupXml = $"""
+        <RobotSystem name="IRB120ThreeGroup" manufacturer="ABB">
+          <Mechanisms group="0">
+            {AbbIrb120ArmXml}
+          </Mechanisms>
+          <Mechanisms group="1">
+            {AbbIrb120ArmXml}
+          </Mechanisms>
+          <Mechanisms group="2">
+            {AbbIrb120ArmXml}
+          </Mechanisms>
+        </RobotSystem>
+        """;
+
     static readonly string AbbNumericalXml = $"""
         <RobotSystem name="CRB15000" manufacturer="ABB">
           <Mechanisms>
@@ -103,11 +120,13 @@ static class TestRobots
         </RobotSystem>
         """;
 
-    public static RobotSystem AbbIrb120() => Parse(AbbIrb120Xml);
+    public static RobotSystem AbbIrb120(bool omniCore = false) => Parse(AbbIrb120SystemXml(omniCore));
 
     public static RobotSystem AbbIrb120WithCustomExternal() => Parse(AbbIrb120WithCustomExternalXml);
 
     public static RobotSystem AbbTwoGroupWithCustomExternal() => Parse(AbbTwoGroupWithCustomExternalXml);
+
+    public static RobotSystem AbbThreeGroup() => Parse(AbbThreeGroupXml);
 
     public static RobotSystem AbbNumerical() => Parse(AbbNumericalXml);
 
@@ -119,9 +138,12 @@ static class TestRobots
     public static RobotSystem FanucLrMate() => Parse(FanucLrMateXml);
 
     public static RobotSystem PostProcessorRobot(Manufacturers manufacturer, int jointCount) =>
-        manufacturer == Manufacturers.UR && jointCount == 6
-            ? UR10()
-            : Parse(PostProcessorXml(manufacturer, jointCount));
+        (manufacturer, jointCount) switch
+        {
+            (Manufacturers.ABB, 6) => AbbIrb120(),
+            (Manufacturers.UR, 6) => UR10(),
+            _ => Parse(PostProcessorXml(manufacturer, jointCount))
+        };
 
     public static Program AbbSampleProgram()
     {

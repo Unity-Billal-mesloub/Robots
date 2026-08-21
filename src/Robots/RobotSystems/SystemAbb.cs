@@ -5,6 +5,9 @@ namespace Robots;
 
 public class SystemAbb : IndustrialSystem
 {
+    internal bool IsOmniCore => Controller.EqualsIgnoreCase("omnicore");
+    internal string ModuleExtension => IsOmniCore ? "modx" : "mod";
+
     internal SystemAbb(SystemAttributes attributes, List<MechanicalGroup> mechanicalGroups)
         : base(attributes, mechanicalGroups)
     {
@@ -21,9 +24,8 @@ public class SystemAbb : IndustrialSystem
     {
         var programCode = RequireCode(program);
 
-        bool isOmniCore = Controller.EqualsIgnoreCase("omnicore");
-        var extension = isOmniCore ? "modx" : "mod";
-        var encoding = isOmniCore ? new UTF8Encoding(false) : Encoding.GetEncoding("ISO-8859-1");
+        var extension = ModuleExtension;
+        var encoding = IsOmniCore ? new UTF8Encoding(false) : Encoding.GetEncoding("ISO-8859-1");
         var pgfEncoding = Encoding.GetEncoding("ISO-8859-1");
         var programDir = CreateProgramDirectory(folder, program.Name);
 

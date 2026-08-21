@@ -39,13 +39,13 @@ public static class FileIO
         return CreateRobotSystem(element, basePlane, null, postProcessor);
     }
 
-    internal static RobotSystem ParseRobotSystem(string xml, Plane basePlane, File3dm meshDoc, IPostProcessor? postProcessor = null)
+    public static RobotSystem ParseRobotSystem(string xml, Plane basePlane, File3dm meshDoc, IPostProcessor? postProcessor = null)
     {
         var element = XElement.Parse(xml);
         return CreateRobotSystem(element, basePlane, meshDoc, postProcessor);
     }
 
-    internal static Tool ParseTool(string xml, File3dm meshDoc)
+    public static Tool ParseTool(string xml, File3dm meshDoc)
     {
         var element = XElement.Parse(xml);
         return CreateTool(element, meshDoc);

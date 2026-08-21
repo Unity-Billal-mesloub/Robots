@@ -1,15 +1,13 @@
 ﻿using static System.Math;
 using Rhino.Geometry;
+using Robots.Commands;
 
 namespace Robots;
 
 class RapidPostProcessor : IPostProcessor
 {
-    public List<List<List<string>>> GetCode(RobotSystem system, Program program)
-    {
-        PostInstance instance = new((SystemAbb)system, program);
-        return instance.Code;
-    }
+    public List<List<List<string>>> GetCode(RobotSystem system, Program program) =>
+        new PostInstance((SystemAbb)system, program).Code;
 
     class PostInstance
     {
@@ -23,86 +21,85 @@ class RapidPostProcessor : IPostProcessor
             _program = program;
             Code = [];
 
-            for (int i = 0; i < _system.MechanicalGroups.Count; i++)
+            for (var group = 0; group < _system.MechanicalGroups.Count; group++)
             {
-                List<List<string>> groupCode =
-                [
-                    MainModule(i)
-                ];
+                var process = RapidSpeedProcess.Create(system, program, group);
+                List<List<string>> groupCode = [MainModule(group, process)];
 
-                for (int j = 0; j < program.MultiFileIndices.Count; j++)
-                    groupCode.Add(SubModule(j, i));
+                for (var file = 0; file < program.MultiFileIndices.Count; file++)
+                    groupCode.Add(SubModule(file, group, process));
 
                 Code.Add(groupCode);
             }
         }
 
-        List<string> MainModule(int group)
+        List<string> MainModule(int group, RapidSpeedProcess? process)
         {
-            var code = new List<string>();
-            bool multiProgram = _program.MultiFileIndices.Count > 1;
-            string groupName = _system.MechanicalGroups[group].Name;
+            List<string> code = [];
+            var multiProgram = _program.MultiFileIndices.Count > 1;
+            var groupName = _system.MechanicalGroups[group].Name;
 
             code.Add($"MODULE {_program.Name}_{groupName}");
-            if (_system.MechanicalGroups[group].Externals.Length == 0) code.Add("VAR extjoint extj := [9E9,9E9,9E9,9E9,9E9,9E9];");
+            if (_system.MechanicalGroups[group].Externals.Length == 0)
+                code.Add("VAR extjoint extj := [9E9,9E9,9E9,9E9,9E9,9E9];");
             code.Add("VAR confdata conf := [0,0,0,0];");
 
-            // Attribute declarations
             var attributes = _program.Attributes;
 
             if (_system.MechanicalGroups.Count > 1)
             {
                 code.Add("VAR syncident sync1;");
                 code.Add("VAR syncident sync2;");
-                code.Add(@"TASK PERS tasks all_tasks{2} := [[""T_ROB1""], [""T_ROB2""]];");
+                var tasks = string.Join(", ", _system.MechanicalGroups.Select(group => $@"[""{group.Name}""]"));
+                code.Add($@"TASK PERS tasks all_tasks{{{_system.MechanicalGroups.Count}}} := [{tasks}];");
             }
 
-            {
-                foreach (var tool in attributes.OfType<Tool>().Where(t => !t.UseController))
-                    code.Add(Tool(tool));
+            foreach (var tool in attributes.OfType<Tool>().Where(t => !t.UseController))
+                code.Add(Tool(tool));
 
-                foreach (var frame in attributes.OfType<Frame>().Where(t => !t.UseController))
-                    code.Add(Frame(frame));
+            foreach (var frame in attributes.OfType<Frame>().Where(t => !t.UseController))
+                code.Add(Frame(frame));
 
-                foreach (var speed in attributes.OfType<Speed>())
-                    code.Add(Speed(speed));
+            foreach (var speed in attributes.OfType<Speed>())
+                code.Add(Speed(speed));
 
-                foreach (var zone in attributes.OfType<Zone>().Where(z => z.IsFlyBy))
-                    code.Add(Zone(zone));
+            foreach (var zone in attributes.OfType<Zone>().Where(z => z.IsFlyBy))
+                code.Add(Zone(zone));
 
-                PostProcessorUtil.AddDeclarations(code, _program);
-            }
+            PostProcessorUtil.AddDeclarations(code, _program);
+
+            if (process is not null)
+                code.AddRange(process.Declarations);
 
             code.Add("PROC Main()");
-            if (!multiProgram) code.Add("ConfL \\Off;");
-
-            // Init commands
+            if (!multiProgram)
+                code.Add("ConfL \\Off;");
 
             if (group == 0)
                 PostProcessorUtil.AddInitCommands(code, _program);
 
+            if (process is not null)
+                code.Add(process.OffCode);
+
             if (_system.MechanicalGroups.Count > 1)
-            {
-                code.Add($"SyncMoveOn sync1, all_tasks;");
-            }
+                code.Add("SyncMoveOn sync1, all_tasks;");
 
             if (multiProgram)
             {
-                for (int i = 0; i < _program.MultiFileIndices.Count; i++)
+                for (var file = 0; file < _program.MultiFileIndices.Count; file++)
                 {
-                    code.Add($"Load\\Dynamic, \"HOME:/{_program.Name}/{_program.Name}_{groupName}_{i:000}.MOD\";");
-                    code.Add($"%\"{_program.Name}_{groupName}_{i:000}:Main\"%;");
-                    code.Add($"UnLoad \"HOME:/{_program.Name}/{_program.Name}_{groupName}_{i:000}.MOD\";");
+                    code.Add($"Load\\Dynamic, \"HOME:/{_program.Name}/{_program.Name}_{groupName}_{file:000}.{_system.ModuleExtension}\";");
+                    code.Add($"%\"{_program.Name}_{groupName}_{file:000}:Main\"%;");
+                    code.Add($"UnLoad \"HOME:/{_program.Name}/{_program.Name}_{groupName}_{file:000}.{_system.ModuleExtension}\";");
                 }
-            }
 
-            if (multiProgram)
-            {
+                if (process is not null)
+                    code.Add(process.OffCode);
+
                 if (_system.MechanicalGroups.Count > 1)
-                {
-                    code.Add($"SyncMoveOff sync2;");
-                }
+                    code.Add("SyncMoveOff sync2;");
 
+                AddErrorHandler(code, process);
                 code.Add("ENDPROC");
                 code.Add("ENDMODULE");
             }
@@ -110,181 +107,197 @@ class RapidPostProcessor : IPostProcessor
             return code;
         }
 
-        List<string> SubModule(int file, int group)
+        List<string> SubModule(int file, int group, RapidSpeedProcess? process)
         {
             var mechGroup = _system.MechanicalGroups[group];
-
-            bool multiProgram = _program.MultiFileIndices.Count > 1;
-            string groupName = mechGroup.Name;
-
+            var multiProgram = _program.MultiFileIndices.Count > 1;
+            var groupName = mechGroup.Name;
             var (start, end) = _program.GetTargetRange(file);
-            var code = new List<string>();
+            List<string> code = [];
 
             if (multiProgram)
             {
                 code.Add($"MODULE {_program.Name}_{groupName}_{file:000}");
-                code.Add($"PROC Main()");
+                code.Add("PROC Main()");
                 code.Add("ConfL \\Off;");
             }
 
-            for (int j = start; j < end; j++)
+            for (var i = start; i < end; i++)
             {
-                var programTarget = _program.Targets[j].ProgramTargets[group];
+                var programTarget = _program.Targets[i].ProgramTargets[group];
                 var target = programTarget.Target;
-                string moveText;
-                string zone = (target.Zone.IsFlyBy ? target.Zone.Name : "fine").NotNull("Zone name cannot be null.");
-                string id = _system.MechanicalGroups.Count > 1 ? $@"\ID:={programTarget.Index}" : "";
-                string external = "extj";
+                var zone = (target.Zone.IsFlyBy ? target.Zone.Name : "fine").NotNull("Zone name cannot be null.");
+                var id = _system.MechanicalGroups.Count > 1 ? $@"\ID:={programTarget.Index}" : "";
+                var external = RapidFormatting.ExternalTargetValue(mechGroup, target, useDefaultExternalVariable: true);
 
-                if (mechGroup.Externals.Length > 0)
-                {
-                    double[] values = mechGroup.RadiansToDegreesExternal(target);
-                    var externals = new string[6];
-
-                    for (int i = 0; i < 6; i++)
-                        externals[i] = "9E9";
-
-                    if (target.ExternalCustom is null)
-                    {
-                        for (int i = 0; i < values.Length; i++)
-                            externals[i] = $"{values[i]:0.####}";
-                    }
-                    else
-                    {
-                        for (int i = 0; i < target.ExternalCustom.Length; i++)
-                        {
-                            string e = target.ExternalCustom[i];
-                            if (!string.IsNullOrEmpty(e))
-                                externals[i] = e;
-                        }
-                    }
-
-                    external = $"[{string.Join(",", externals)}]";
-                }
+                AddTargetCommands(code, programTarget, runBefore: true);
 
                 if (programTarget.IsJointTarget)
                 {
-                    var jointTarget = (JointTarget)programTarget.Target;
-                    double[] joints = jointTarget.Joints;
-                    joints = joints.Map(mechGroup.RadianToDegree);
-                    moveText = $"MoveAbsJ [[{joints[0]:0.####},{joints[1]:0.####},{joints[2]:0.####},{joints[3]:0.####},{joints[4]:0.####},{joints[5]:0.####}],{external}]{id},{target.Speed.Name},{zone},{target.Tool.Name};";
+                    var jointTarget = (JointTarget)target;
+                    var targetValue = RapidFormatting.JointTargetValue(_system, jointTarget, group, useDefaultExternalVariable: true);
+                    code.Add($"MoveAbsJ {targetValue}{id},{target.Speed.Name},{zone},{target.Tool.Name};");
                 }
                 else
                 {
-                    var cartesian = (CartesianTarget)programTarget.Target;
+                    var cartesian = (CartesianTarget)target;
                     var plane = cartesian.Plane;
-                    Quaternion quaternion = plane.ToQuaternion();
+                    var quaternion = plane.ToQuaternion();
+                    var pos = $"[{plane.OriginX:0.###},{plane.OriginY:0.###},{plane.OriginZ:0.###}]";
+                    var orient = $"[{quaternion.A:0.#####},{quaternion.B:0.#####},{quaternion.C:0.#####},{quaternion.D:0.#####}]";
 
                     switch (cartesian.Motion)
                     {
                         case Motions.Joint:
                             {
-                                string pos = $"[{plane.OriginX:0.###},{plane.OriginY:0.###},{plane.OriginZ:0.###}]";
-                                string orient = $"[{quaternion.A:0.#####},{quaternion.B:0.#####},{quaternion.C:0.#####},{quaternion.D:0.#####}]";
-
-                                int cf1 = (int)Floor(programTarget.Kinematics.Joints[0] / (PI / 2));
-                                int cf4 = (int)Floor(programTarget.Kinematics.Joints[3] / (PI / 2));
-                                int cf6 = (int)Floor(programTarget.Kinematics.Joints[5] / (PI / 2));
+                                var cf1 = (int)Floor(programTarget.Kinematics.Joints[0] / (PI / 2));
+                                var cf4 = (int)Floor(programTarget.Kinematics.Joints[3] / (PI / 2));
+                                var cf6 = (int)Floor(programTarget.Kinematics.Joints[5] / (PI / 2));
 
                                 if (cf1 < 0) cf1--;
                                 if (cf4 < 0) cf4--;
                                 if (cf6 < 0) cf6--;
 
-                                RobotConfigurations configuration = programTarget.Kinematics.Configuration;
-                                bool shoulder = configuration.HasFlag(RobotConfigurations.Shoulder);
-                                bool elbow = configuration.HasFlag(RobotConfigurations.Elbow);
+                                var configuration = programTarget.Kinematics.Configuration;
+                                var shoulder = configuration.HasFlag(RobotConfigurations.Shoulder);
+                                var elbow = configuration.HasFlag(RobotConfigurations.Elbow);
                                 if (shoulder) elbow = !elbow;
-                                bool wrist = configuration.HasFlag(RobotConfigurations.Wrist);
+                                var wrist = configuration.HasFlag(RobotConfigurations.Wrist);
 
-                                int cfx = 0;
+                                var cfx = 0;
                                 if (wrist) cfx += 1;
                                 if (elbow) cfx += 2;
                                 if (shoulder) cfx += 4;
 
-                                string conf = $"[{cf1},{cf4},{cf6},{cfx}]";
-                                string robtarget = $"[{pos},{orient},{conf},{external}]";
-
-                                moveText = $@"MoveJ {robtarget}{id},{target.Speed.Name},{zone},{target.Tool.Name} \WObj:={target.Frame.Name};";
+                                var conf = $"[{cf1},{cf4},{cf6},{cfx}]";
+                                var robtarget = $"[{pos},{orient},{conf},{external}]";
+                                code.Add($@"MoveJ {robtarget}{id},{target.Speed.Name},{zone},{target.Tool.Name} \WObj:={target.Frame.Name};");
                                 break;
                             }
 
                         case Motions.Linear:
                             {
-                                string pos = $"[{plane.OriginX:0.###},{plane.OriginY:0.###},{plane.OriginZ:0.###}]";
-                                string orient = $"[{quaternion.A:0.#####},{quaternion.B:0.#####},{quaternion.C:0.#####},{quaternion.D:0.#####}]";
-                                string robtarget = $"[{pos},{orient},conf,{external}]";
-                                moveText = $@"MoveL {robtarget}{id},{target.Speed.Name},{zone},{target.Tool.Name} \WObj:={target.Frame.Name};";
+                                var robtarget = $"[{pos},{orient},conf,{external}]";
+
+                                if (process is not null && process.HasAt(i))
+                                {
+                                    var starts = !process.HasAt(i - 1);
+                                    var stops = !process.HasAt(i + 1);
+
+                                    if (starts)
+                                        code.AddRange(process.SetupCode);
+
+                                    code.Add(process.LinearMove(
+                                        robtarget,
+                                        id,
+                                        target.Speed.Name,
+                                        zone,
+                                        target.Tool.Name,
+                                        target.Frame.Name,
+                                        stops));
+                                }
+                                else
+                                {
+                                    code.Add($@"MoveL {robtarget}{id},{target.Speed.Name},{zone},{target.Tool.Name} \WObj:={target.Frame.Name};");
+                                }
+
                                 break;
                             }
+
                         default:
                             throw PostProcessorUtil.InvalidMotion(cartesian.Motion);
                     }
                 }
 
-                PostProcessorUtil.AddTargetCommands(code, _program, programTarget, true);
-
-                code.Add(moveText);
-
-                PostProcessorUtil.AddTargetCommands(code, _program, programTarget, false);
+                AddTargetCommands(code, programTarget, runBefore: false);
             }
 
             if (!multiProgram)
             {
+                if (process is not null)
+                    code.Add(process.OffCode);
+
                 if (_system.MechanicalGroups.Count > 1)
-                {
-                    code.Add($"SyncMoveOff sync2;");
-                }
+                    code.Add("SyncMoveOff sync2;");
             }
 
+            AddErrorHandler(code, process);
             code.Add("ENDPROC");
             code.Add("ENDMODULE");
             return code;
         }
 
+        void AddTargetCommands(List<string> code, ProgramTarget target, bool runBefore)
+        {
+            foreach (var command in target.Commands.Where(command => command.RunBefore == runBefore))
+            {
+                if (command is IMotionCommand)
+                    continue;
+
+                var commandCode = command.Code(_program, target.Target);
+
+                if (!string.IsNullOrWhiteSpace(commandCode))
+                    code.Add(commandCode);
+            }
+        }
+
+        static void AddErrorHandler(List<string> code, RapidSpeedProcess? process)
+        {
+            if (process is null)
+                return;
+
+            code.Add("ERROR");
+            code.Add(process.OffCode);
+            code.Add("RAISE;");
+        }
+
         static string Tool(Tool tool)
         {
             var tcp = tool.Tcp;
-            Quaternion quaternion = tcp.ToQuaternion();
-            double weight = (tool.Weight > 0.001) ? tool.Weight : 0.001;
+            var quaternion = tcp.ToQuaternion();
+            var weight = tool.Weight > 0.001 ? tool.Weight : 0.001;
+            var centroid = tool.Centroid;
 
-            Point3d centroid = tool.Centroid;
             if (centroid.DistanceTo(Point3d.Origin) < 0.001)
                 centroid = new(0, 0, 0.001);
 
-            string pos = $"[{tool.Tcp.OriginX:0.###},{tool.Tcp.OriginY:0.###},{tool.Tcp.OriginZ:0.###}]";
-            string orient = $"[{quaternion.A:0.#####},{quaternion.B:0.#####},{quaternion.C:0.#####},{quaternion.D:0.#####}]";
-            string loaddata = $"[{weight:0.###},[{centroid.X:0.###},{centroid.Y:0.###},{centroid.Z:0.###}],[1,0,0,0],0,0,0]";
+            var pos = $"[{tcp.OriginX:0.###},{tcp.OriginY:0.###},{tcp.OriginZ:0.###}]";
+            var orient = $"[{quaternion.A:0.#####},{quaternion.B:0.#####},{quaternion.C:0.#####},{quaternion.D:0.#####}]";
+            var loaddata = $"[{weight:0.###},[{centroid.X:0.###},{centroid.Y:0.###},{centroid.Z:0.###}],[1,0,0,0],0,0,0]";
             return $"PERS tooldata {tool.Name}:=[TRUE,[{pos},{orient}],{loaddata}];";
         }
 
         string Frame(Frame frame)
         {
-            Plane plane = frame.Plane;
+            var plane = frame.Plane;
             plane.InverseOrient(ref _system.BasePlane);
-            Quaternion quaternion = plane.ToQuaternion();
-            string pos = $"[{plane.OriginX:0.###},{plane.OriginY:0.###},{plane.OriginZ:0.###}]";
-            string orient = $"[{quaternion.A:0.#####},{quaternion.B:0.#####},{quaternion.C:0.#####},{quaternion.D:0.#####}]";
-            string coupledMech = "";
-            string coupledBool = frame.IsCoupled ? "FALSE" : "TRUE";
+            var quaternion = plane.ToQuaternion();
+            var pos = $"[{plane.OriginX:0.###},{plane.OriginY:0.###},{plane.OriginZ:0.###}]";
+            var orient = $"[{quaternion.A:0.#####},{quaternion.B:0.#####},{quaternion.C:0.#####},{quaternion.D:0.#####}]";
+            var coupledMech = "";
+            var coupledBool = frame.IsCoupled ? "FALSE" : "TRUE";
+
             if (frame.IsCoupled)
             {
                 coupledMech = frame.CoupledMechanism == -1
-                    ? $"ROB_{frame.CoupledMechanicalGroup + 1}" : $"STN_{frame.CoupledMechanism + 1}";
+                    ? $"ROB_{frame.CoupledMechanicalGroup + 1}"
+                    : $"STN_{frame.CoupledMechanism + 1}";
             }
+
             return $@"TASK PERS wobjdata {frame.Name}:=[FALSE,{coupledBool},""{coupledMech}"",[{pos},{orient}],[[0,0,0],[1,0,0,0]]];";
         }
 
         static string Speed(Speed speed)
         {
-            double rotation = speed.RotationSpeed.ToDegrees();
-            double rotationExternal = speed.RotationExternal.ToDegrees();
+            var rotation = speed.RotationSpeed.ToDegrees();
+            var rotationExternal = speed.RotationExternal.ToDegrees();
             return $"TASK PERS speeddata {speed.Name}:=[{speed.TranslationSpeed:0.###},{rotation:0.###},{speed.TranslationExternal:0.###},{rotationExternal:0.###}];";
         }
 
         static string Zone(Zone zone)
         {
-            double angle = zone.Rotation.ToDegrees();
-            double angleExternal = zone.RotationExternal.ToDegrees();
+            var angle = zone.Rotation.ToDegrees();
+            var angleExternal = zone.RotationExternal.ToDegrees();
             return $"TASK PERS zonedata {zone.Name}:=[FALSE,{zone.Distance:0.###},{zone.Distance:0.###},{zone.Distance:0.###},{angle:0.###},{zone.Distance:0.###},{angleExternal:0.###}];";
         }
     }

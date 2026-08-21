@@ -1,3 +1,9 @@
+﻿- version: 2.3.0
+  changes:
+  - Added a speed-proportional analogue-output motion command with ABB RAPID support.
+  - Fixed ABB OmniCore multi-file programs referencing `.MOD` files instead of the saved `.modx` files.
+  - Updated SSH.NET to 2026.0.0 to address known security vulnerabilities.
+
 - version: 2.2.5
   changes:
   - Fixed ABB remote commands looking for the helper executable in Rhino's runtime folder.

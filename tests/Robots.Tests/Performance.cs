@@ -13,7 +13,7 @@ class Performance
     [Test]
     [Explicit("Reports synthetic ABB parse and program creation timings.")]
     public void AbbIrb120ProgramCreation() =>
-        Report("ABB IRB120", TestRobots.AbbIrb120, AbbProgram, 3.7851345985264309);
+        Report("ABB IRB120", static () => TestRobots.AbbIrb120(), AbbProgram, 3.7851345985264309);
 
     [Test]
     [Explicit("Reports synthetic UR parse and program creation timings.")]

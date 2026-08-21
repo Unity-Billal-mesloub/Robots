@@ -71,8 +71,11 @@ class ProgramPreflight(Program program)
 
         foreach (var target in targets)
         {
-            if (!target.HasCommands || !target.Target.Zone.IsFlyBy)
+            if (!target.Target.Zone.IsFlyBy
+                || !target.Commands.Any(command => command is not Commands.IMotionCommand))
+            {
                 continue;
+            }
 
             first ??= target;
             count++;
