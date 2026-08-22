@@ -3,11 +3,10 @@
 # ![Robots](../docs/Images/robots-icon.svg)<br/>robots
 **Create and simulate ABB, KUKA, UR, Staubli, Franka Emika, Doosan, Fanuc, Igus, and Jaka robot programs in Rhino 8, Grasshopper, and .NET**
 
-[![License](https://img.shields.io/github/license/visose/Robots?style=flat-square)](../LICENSE)
 [![NuGet package](https://img.shields.io/nuget/v/robots?style=flat-square)](https://www.nuget.org/packages?q=visose+robots)
-[![Repo stars](https://img.shields.io/github/stars/visose/robots?style=flat-square)](https://github.com/visose/Robots)
-[![Discussions](https://img.shields.io/github/discussions/visose/robots?style=flat-square)](https://github.com/visose/Robots/discussions)
-[![Sponsor](https://img.shields.io/badge/sponsor-gray?style=flat-square&logo=GitHub-Sponsors)](https://github.com/sponsors/visose)
+[![Repo stars](https://img.shields.io/github/stars/visose/robots?style=flat-square)](https://github.com/Unity-Billal-mesloub/Robots)
+[![Discussions](https://img.shields.io/github/discussions/visose/robots?style=flat-square)](https://github.com/Unity-Billal-mesloub/Robots/discussions)
+[![Sponsor](https://img.shields.io/badge/sponsor-gray?style=flat-square&logo=GitHub-Sponsors)](https://github.com/sponsors/Unity-Billal-mesloub)
 
 **[About](#about) •
 [Install](#install) •
@@ -45,7 +44,7 @@ Supported manufacturers include **ABB**, **KUKA**, **UR**, **Staubli**, **Franka
 
 ## Support
 
-### 🆓 [Community](https://github.com/visose/Robots/discussions)
+### 🆓 [Community](https://github.com/Unity-Billal-mesloub/Robots/discussions)
 
 Ask any questions in our discussions forum.
 ### 💼 [Commercial](https://visose.com/robots)
@@ -54,7 +53,7 @@ Partner with the creators of Robots to ensure you have the best support for your
 
 ## Sponsors
 
-The continued development and maintenance of this project is made possible by our sponsors and commercial partners. Become a sponsor by purchasing [commercial support](https://visose.com/robots), or by donating via [GitHub Sponsors](https://github.com/sponsors/visose) or [PayPal](https://visose.com/paypal).
+The continued development and maintenance of this project is made possible by our sponsors and commercial partners. Become a sponsor by purchasing [commercial support](https://visose.com/robots), or by donating via [GitHub Sponsors](https://github.com/sponsors/Unity-Billal-mesloub) or [PayPal](https://visose.com/paypal).
 
 ### Our top sponsors
 
